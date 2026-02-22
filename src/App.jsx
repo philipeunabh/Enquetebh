@@ -90,7 +90,7 @@ const Navbar = ({ user, onLogout, onNavigate }) => {
                     className="absolute mt-2 w-48 bg-white rounded-lg shadow-lg border border-stone-100 py-1 z-50"
                   >
                     {categories.map(cat => (
-                      <a href={`/category/${cat}`} key={cat} className="block px-4 py-2 text-sm text-stone-700 hover:bg-stone-50">{cat}</a>
+                      <button onClick={() => onNavigate('category', cat)} key={cat} className="block w-full text-left px-4 py-2 text-sm text-stone-700 hover:bg-stone-50">{cat}</button>
                     ))}
                   </motion.div>
                 )}
@@ -331,6 +331,89 @@ const RegisterPage = ({ onLogin, onNavigate }) => {
           Já tem uma conta? <button onClick={() => onNavigate('login')} className="text-emerald-600 font-bold hover:underline">Entre aqui</button>
         </div>
       </motion.div>
+    </div>
+  );
+};
+
+const CategoryPage = ({ category, onNavigate }) => {
+  const [polls, setPolls] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const limit = 9;
+
+  const fetchPolls = (currentOffset) => {
+    setLoading(true);
+    fetch(`/api/polls/category/${category}?limit=${limit}&offset=${currentOffset}`)
+      .then(res => res.json())
+      .then(data => {
+        setPolls(prev => {
+          const allPolls = [...prev, ...data.polls];
+          const uniquePolls = Array.from(new Map(allPolls.map(p => [p.id, p])).values());
+          return uniquePolls;
+        });
+        setHasMore(data.polls.length === limit);
+        setOffset(currentOffset + limit);
+        setLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    setPolls([]);
+    setOffset(0);
+    fetchPolls(0);
+  }, [category]);
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <header className="mb-12">
+        <h1 className="text-4xl font-bold text-stone-900">Enquetes em <span className="text-emerald-600">{category}</span></h1>
+        <div className="h-1 w-16 bg-emerald-500 mt-2"></div>
+      </header>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {polls.map((poll, index) => (
+          <motion.div 
+            key={poll.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.1 }}
+            onClick={() => onNavigate('poll-detail', poll.id)}
+            className="group bg-white rounded-2xl p-6 border border-stone-100 shadow-sm hover:shadow-xl transition-all cursor-pointer"
+          >
+            <div className="flex justify-between items-start mb-4">
+              <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${poll.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-stone-100 text-stone-600'}`}>
+                {poll.status === 'active' ? 'Ativa' : 'Encerrada'}
+              </span>
+              <div className="flex items-center text-stone-400 text-sm">
+                <Vote className="h-4 w-4 mr-1" />
+                {poll.total_votes} votos
+              </div>
+            </div>
+            <h3 className="text-xl font-bold text-stone-900 group-hover:text-emerald-600 transition-colors mb-2">
+              {poll.title}
+            </h3>
+            <p className="text-stone-500 text-sm line-clamp-2 mb-6">
+              {poll.description}
+            </p>
+            <div className="flex items-center text-emerald-600 font-bold text-sm">
+              Votar agora <ChevronRight className="h-4 w-4 ml-1 group-hover:ml-2 transition-all" />
+            </div>
+          </motion.div>
+        ))}
+      </div>
+
+      {hasMore && (
+        <div className="text-center mt-12">
+          <button 
+            onClick={() => fetchPolls(offset)}
+            disabled={loading}
+            className="bg-emerald-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-emerald-700 transition-all shadow-md disabled:bg-stone-400"
+          >
+            {loading ? 'Carregando...' : 'Carregar Mais'}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -1220,55 +1303,80 @@ const AdminDashboard = () => {
 
 export default function App() {
   const [user, setUser] = useState(null);
-  const [currentPage, setCurrentPage] = useState('home');
-  const [currentPollId, setCurrentPollId] = useState(null);
+  const [activePage, setActivePage] = useState('home');
+  const [activePollId, setActivePollId] = useState(null);
+  const [activeCategory, setActiveCategory] = useState(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('user');
-    if (saved) setUser(JSON.parse(saved));
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
   }, []);
 
-  const handleLogin = (u) => {
-    setUser(u);
-    localStorage.setItem('user', JSON.stringify(u));
-    setCurrentPage('home');
+  const handleLogin = (user) => {
+    setUser(user);
+    localStorage.setItem('user', JSON.stringify(user));
+    handleNavigate('home');
   };
 
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('user');
-    setCurrentPage('home');
+    handleNavigate('home');
   };
 
-  const navigate = (page, id) => {
-    setCurrentPage(page);
-    if (id) setCurrentPollId(id);
+  const handleNavigate = (page, id = null) => {
+    setActivePage(page);
+    setActivePollId(id);
+    if (page === 'category') {
+      setActiveCategory(id);
+    } else {
+      // Reset category when navigating to other pages
+      if (page !== 'poll-detail') {
+         setActiveCategory(null);
+      }
+    }
     window.scrollTo(0, 0);
   };
 
+  const renderContent = () => {
+    switch (activePage) {
+      case 'home':
+        return <HomePage onNavigate={handleNavigate} />;
+      case 'polls':
+        return <HomePage onNavigate={handleNavigate} />;
+      case 'category':
+        return <CategoryPage category={activeCategory} onNavigate={handleNavigate} />;
+      case 'poll-detail':
+        return <PollDetailPage pollId={activePollId} user={user} onNavigate={handleNavigate} />;
+      case 'login':
+        return <LoginPage onLogin={handleLogin} onNavigate={handleNavigate} />;
+      case 'register':
+        return <RegisterPage onLogin={handleLogin} onNavigate={handleNavigate} />;
+      case 'admin':
+        return user?.role === 'admin' ? <AdminDashboard /> : <HomePage onNavigate={handleNavigate} />;
+      case 'profile':
+        return user ? <UserProfilePage user={user} /> : <LoginPage onLogin={handleLogin} onNavigate={handleNavigate} />;
+      default:
+        return <HomePage onNavigate={handleNavigate} />;
+    }
+  };
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar user={user} onLogout={handleLogout} onNavigate={navigate} />
-      
+    <div className="min-h-screen flex flex-col bg-stone-50">
+      <Navbar user={user} onLogout={handleLogout} onNavigate={handleNavigate} />
       <main className="flex-grow">
         <AnimatePresence mode="wait">
-            <motion.div
-              key={currentPage + (currentPollId || '')}
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.2 }}
-            >
-              {currentPage === 'home' && <HomePage onNavigate={navigate} />}
-              {currentPage === 'polls' && <HomePage onNavigate={navigate} />}
-              {currentPage === 'poll-detail' && currentPollId && (
-                <PollDetailPage pollId={currentPollId} user={user} onNavigate={navigate} />
-              )}
-              {currentPage === 'login' && <LoginPage onLogin={handleLogin} onNavigate={navigate} />}
-              {currentPage === 'register' && <RegisterPage onLogin={handleLogin} onNavigate={navigate} />}
-              {currentPage === 'admin' && user?.role === 'admin' && <AdminDashboard />}
-              {currentPage === 'profile' && user && <UserProfilePage user={user} />}
-            </motion.div>
+          <motion.div
+            key={activePage + activePollId + activeCategory}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            {renderContent()}
+          </motion.div>
         </AnimatePresence>
       </main>
 

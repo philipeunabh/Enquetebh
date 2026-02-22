@@ -132,6 +132,25 @@ async function startServer() {
     res.json(categories);
   });
 
+  app.get('/api/polls/category/:category', (req, res) => {
+    const { category } = req.params;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = parseInt(req.query.offset) || 0;
+
+    const polls = db.prepare(`
+      SELECT p.*, 
+      (SELECT COUNT(*) FROM votes v WHERE v.poll_id = p.id) as total_votes
+      FROM polls p 
+      WHERE p.category = ? AND p.status != 'draft'
+      ORDER BY p.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(category, limit, offset);
+
+    const totalPolls = db.prepare(`SELECT COUNT(*) as count FROM polls WHERE category = ? AND status != 'draft'`).get(category).count;
+
+    res.json({ polls, totalPolls });
+  });
+
   app.get('/api/polls/:id', (req, res) => {
     const poll = db.prepare('SELECT * FROM polls WHERE id = ?').get(req.params.id);
     if (!poll) return res.status(404).json({ message: 'Enquete não encontrada' });
